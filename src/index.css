@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-base: #050811;
+    --bg-sidebar: #080d1a;
+    --bg-card: #0c1527;
+    --bg-card-elevated: #111e38;
+    --border-subtle: rgba(30, 58, 102, 0.5);
+    --border-glow: rgba(0, 242, 254, 0.3);
+    --neon-cyan: #00f2fe;
+    --neon-crimson: #f43f5e;
+    --neon-amber: #f59e0b;
+    --neon-emerald: #10b981;
+  }
+
+  body {
+    background-color: #050811;
+    color: #f8fafc;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Custom thin scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #050811;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e3a66;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00f2fe;
+  }
+}
+
+/* Pulse animation utility */
+@keyframes ping-slow {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-ping-slow {
+  animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Glassmorphism SOC surface */
+.soc-card {
+  background: #0c1527;
+  border: 1px solid rgba(30, 58, 102, 0.6);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.soc-card:hover {
+  border-color: rgba(0, 242, 254, 0.4);
+}
