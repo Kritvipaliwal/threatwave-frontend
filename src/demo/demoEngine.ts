@@ -2,6 +2,7 @@ import {
   SecurityEvent, Incident, Asset, Vulnerability, IOC, NotificationItem, 
   RadarBlip, AttackArc, AttackChainNode, SocMetrics 
 } from '../types';
+import { realtimeClient, RealtimeAlert } from '../api/realtime';
 
 export interface PipelineStep {
   step: number;
@@ -12,6 +13,7 @@ export interface PipelineStep {
 
 export interface DemoState {
   demoMode: boolean;
+  liveLabMode: boolean;
   metrics: SocMetrics;
   events: SecurityEvent[];
   incidents: Incident[];
@@ -26,7 +28,7 @@ export interface DemoState {
   aiInsight: {
     text: string;
     confidence: number;
-    status: 'ACTIVE' | 'PROCESSING';
+    status: 'ACTIVE' | 'PROCESSING' | 'IDLE';
     lastAnalysis: string;
   };
   activeSimulation: {
@@ -121,9 +123,90 @@ class DemoEngine {
   private listeners: Array<() => void> = [];
   private tickerInterval: number | null = null;
 
+  private knownAlertIds: Set<string> = new Set();
+  private liveSyncTimer: any = null;
+
   constructor() {
-    this.state = {
+    const isDemoEnv = import.meta.env.VITE_DEMO_MODE === 'true';
+
+    if (isDemoEnv) {
+      this.state = this.getMockDemoState();
+      this.startAutoTicker();
+    } else {
+      this.state = this.getCleanLiveState();
+      realtimeClient.connect();
+      this.fetchInitialLiveData();
+
+      // Continuous 2.5s fast synchronization with Supabase/Render in LIVE MODE
+      this.liveSyncTimer = setInterval(() => {
+        if (this.state.liveLabMode || !this.state.demoMode) {
+          this.fetchInitialLiveData();
+        }
+      }, 2500);
+    }
+
+    realtimeClient.onAlert((alert) => {
+      if (this.state.liveLabMode) {
+        this.ingestLiveAlert(alert);
+      }
+    });
+  }
+
+  // Returns clean state with ZERO synthetic data for LIVE MODE
+  private getCleanLiveState(): DemoState {
+    return {
+      demoMode: false,
+      liveLabMode: true,
+      metrics: {
+        totalThreats: 0,
+        criticalThreats: 0,
+        activeIncidents: 0,
+        blockedIps: 0,
+        aiDetections: 0,
+        assetsMonitored: 0,
+        vulnerabilities: 0,
+        securityScore: 100
+      },
+      events: [],
+      incidents: [],
+      assets: [],
+      vulnerabilities: [],
+      iocs: [],
+      notifications: [
+        {
+          id: 'live-idle',
+          title: 'SYSTEM IDLE',
+          message: 'No live threats detected — Sensor Active',
+          severity: 'LOW',
+          timestamp: 'Active',
+          read: true,
+          type: 'SENSOR_IDLE'
+        }
+      ],
+      radarBlips: [],
+      attackArcs: [],
+      attackChainNodes: [],
+      activeIncident: null,
+      aiInsight: {
+        text: 'No live threats detected — Sensor Active. Passively observing network traffic on monitored interface.',
+        confidence: 100,
+        status: 'IDLE',
+        lastAnalysis: 'Passive observation active'
+      },
+      activeSimulation: {
+        threatType: null,
+        pipeline: [],
+        currentStepIndex: 0,
+        isSimulating: false
+      }
+    };
+  }
+
+  // Isolated mock state retained solely for DEMO MODE presentations
+  private getMockDemoState(): DemoState {
+    return {
       demoMode: true,
+      liveLabMode: false,
       metrics: {
         totalThreats: 1482,
         criticalThreats: 14,
@@ -134,11 +217,11 @@ class DemoEngine {
         vulnerabilities: 4,
         securityScore: 87
       },
-      events: initialEvents,
-      incidents: initialIncidents,
-      assets: initialAssets,
-      vulnerabilities: initialVulnerabilities,
-      iocs: initialIocs,
+      events: [...initialEvents],
+      incidents: [...initialIncidents],
+      assets: [...initialAssets],
+      vulnerabilities: [...initialVulnerabilities],
+      iocs: [...initialIocs],
       notifications: [
         { id: 'notif-1', title: 'CRITICAL: SQL Injection Detected', message: '185.220.101.5 targeted Prod-DB-01 via DMZ-Nginx-01.', severity: 'CRITICAL', timestamp: '20:54', read: false, type: 'CRITICAL_THREAT' },
         { id: 'notif-2', title: 'AI ANOMALY: Authentication Burst', message: '45.154.255.88 exceeded failed threshold by 340%.', severity: 'HIGH', timestamp: '20:54', read: false, type: 'AI_ANOMALY' }
@@ -153,12 +236,9 @@ class DemoEngine {
       ],
       attackArcs: [
         { id: 'arc-1', sourceCity: 'Frankfurt', sourceCountry: 'DE', sourceCoords: [50.11, 8.68], targetCity: 'Mumbai', targetCountry: 'IN', targetCoords: [19.07, 72.87], attackType: 'SQL Injection', severity: 'CRITICAL', progress: 0.1 },
-        { id: 'arc-2', sourceCity: 'Saint Petersburg', sourceCountry: 'RU', sourceCoords: [59.93, 30.33], targetCity: 'Singapore', targetCountry: 'SG', targetCoords: [1.35, 103.81], attackType: 'SSH Brute Force', severity: 'HIGH', progress: 0.4 },
-        { id: 'arc-3', sourceCity: 'Amsterdam', sourceCountry: 'NL', sourceCoords: [52.36, 4.90], targetCity: 'New Delhi', targetCountry: 'IN', targetCoords: [28.61, 77.20], attackType: 'DDoS Flood', severity: 'HIGH', progress: 0.7 },
-        { id: 'arc-4', sourceCity: 'Bucharest', sourceCountry: 'RO', sourceCoords: [44.42, 26.10], targetCity: 'London', targetCountry: 'GB', targetCoords: [51.50, -0.12], attackType: 'Cobalt C2', severity: 'CRITICAL', progress: 0.25 },
-        { id: 'arc-5', sourceCity: 'Beijing', sourceCountry: 'CN', sourceCoords: [39.90, 116.40], targetCity: 'Tokyo', targetCountry: 'JP', targetCoords: [35.67, 139.65], attackType: 'Port Sweep', severity: 'MEDIUM', progress: 0.85 }
+        { id: 'arc-2', sourceCity: 'Saint Petersburg', sourceCountry: 'RU', sourceCoords: [59.93, 30.33], targetCity: 'Singapore', targetCountry: 'SG', targetCoords: [1.35, 103.81], attackType: 'SSH Brute Force', severity: 'HIGH', progress: 0.4 }
       ],
-      attackChainNodes: initialChainNodes,
+      attackChainNodes: [...initialChainNodes],
       activeIncident: initialIncidents[0],
       aiInsight: {
         text: 'AI correlated multi-vector telemetry. High confidence SQL injection detected against Prod-DB-01. Automated firewall mitigation recommended.',
@@ -173,8 +253,166 @@ class DemoEngine {
         isSimulating: false
       }
     };
+  }
 
-    this.startAutoTicker();
+  // Fetches genuine database records from backend/Supabase in LIVE MODE
+  public async fetchInitialLiveData(): Promise<void> {
+    const api = realtimeClient.getApiBaseUrl();
+    try {
+      // 1. Fetch real overview metrics from Supabase
+      const overviewRes = await fetch(`${api}/overview`).catch(() => null);
+      if (overviewRes && overviewRes.ok) {
+        const data = await overviewRes.json();
+        this.state.metrics.totalThreats = data.total_alerts || data.active_threats || 0;
+        this.state.metrics.criticalThreats = data.critical_alerts || 0;
+        this.state.metrics.activeIncidents = data.active_incidents || 0;
+        this.state.metrics.assetsMonitored = data.total_devices || data.active_devices || 0;
+        this.state.metrics.securityScore = Math.max(20, 100 - Math.min(80, (data.critical_alerts || 0) * 5));
+      }
+
+      // 2. Fetch real alerts from Supabase
+      const alertsRes = await fetch(`${api}/alerts?limit=50`).catch(() => null);
+      if (alertsRes && alertsRes.ok) {
+        const alertItems = await alertsRes.json();
+        if (Array.isArray(alertItems) && alertItems.length > 0) {
+          // If we already had an initial baseline, check for genuine newly arrived alerts
+          if (this.knownAlertIds.size > 0) {
+            const newlyArrived = alertItems.filter((a: any) => !this.knownAlertIds.has(a.id));
+            if (newlyArrived.length > 0) {
+              for (const newAlert of newlyArrived) {
+                this.knownAlertIds.add(newAlert.id);
+                this.ingestLiveAlert({
+                  id: newAlert.id,
+                  timestamp: newAlert.timestamp,
+                  threat_category: newAlert.threat_category || 'NETWORK',
+                  attack_type: newAlert.alert_type || 'Observed Threat',
+                  source_ip: newAlert.source_ip || '0.0.0.0',
+                  destination_ip: newAlert.destination_ip || '0.0.0.0',
+                  source_port: newAlert.source_port || 0,
+                  destination_port: newAlert.destination_port || 80,
+                  protocol: newAlert.protocol || 'TCP',
+                  confidence: typeof newAlert.confidence === 'number' ? (newAlert.confidence > 1.0 ? newAlert.confidence / 100 : newAlert.confidence) : 0.9,
+                  severity: newAlert.severity || 'HIGH',
+                  risk_score: newAlert.risk_score || 75,
+                  evidence: Array.isArray(newAlert.evidence) ? newAlert.evidence : [newAlert.description || 'Passive anomaly'],
+                  description: newAlert.description
+                });
+              }
+            }
+          } else {
+            // First load: record all existing Supabase alerts as historical audit entries
+            alertItems.forEach((a: any) => this.knownAlertIds.add(a.id));
+            this.state.events = alertItems.map((a: any) => ({
+              id: a.id,
+              timestamp: a.timestamp ? (a.timestamp.includes('T') ? new Date(a.timestamp).toLocaleTimeString() : a.timestamp) : 'Historical',
+              sourceIp: a.source_ip || '0.0.0.0',
+              destinationIp: a.destination_ip || '0.0.0.0',
+              port: a.destination_port || 443,
+              protocol: a.protocol || 'TCP',
+              attackType: a.alert_type || a.threat_category || 'Historical Alert',
+              severity: a.severity || 'HIGH',
+              confidence: typeof a.confidence === 'number' ? (a.confidence > 1.0 ? a.confidence / 100 : a.confidence) : 0.9,
+              description: a.description ? `[HISTORICAL] ${a.description}` : `[HISTORICAL] ${a.threat_category} recorded in Supabase`,
+              category: 'HISTORICAL'
+            }));
+
+            // In Live Mode when idle: keep radar blips empty and show honest idle state
+            this.state.radarBlips = [];
+            this.state.attackArcs = [];
+            this.state.notifications = [
+              {
+                id: 'live-idle',
+                title: 'SYSTEM IDLE',
+                message: 'No live threats detected — Sensor Active',
+                severity: 'LOW',
+                timestamp: 'Active',
+                read: true,
+                type: 'SENSOR_IDLE'
+              }
+            ];
+            this.state.aiInsight = {
+              text: 'No live threats detected — Sensor Active. Passively observing network traffic on monitored interface.',
+              confidence: 100,
+              status: 'IDLE',
+              lastAnalysis: 'Passive observation active'
+            };
+          }
+        } else {
+          this.state.events = [];
+          this.state.radarBlips = [];
+          this.state.attackChainNodes = [];
+          this.state.notifications = [
+            {
+              id: 'live-idle',
+              title: 'SYSTEM IDLE',
+              message: 'No live threats detected — Sensor Active',
+              severity: 'LOW',
+              timestamp: 'Active',
+              read: true,
+              type: 'SENSOR_IDLE'
+            }
+          ];
+          this.state.aiInsight = {
+            text: 'No live threats detected — Sensor Active. Passively observing network traffic on monitored interface.',
+            confidence: 100,
+            status: 'IDLE',
+            lastAnalysis: 'Passive observation active'
+          };
+        }
+      }
+
+      // 3. Fetch real incidents from Supabase
+      const incRes = await fetch(`${api}/incidents?limit=10`).catch(() => null);
+      if (incRes && incRes.ok) {
+        const incidents = await incRes.json();
+        if (Array.isArray(incidents) && incidents.length > 0) {
+          this.state.incidents = incidents.map((inc: any) => ({
+            id: inc.id,
+            code: inc.code || inc.id,
+            title: inc.title || 'Security Incident',
+            description: inc.description || 'Observed telemetry anomaly',
+            severity: inc.severity || 'HIGH',
+            status: inc.status || 'OPEN',
+            sourceIp: inc.source_ip || '0.0.0.0',
+            targetAsset: inc.target_asset || 'DMZ Gateway',
+            assignedTo: inc.assigned_to || 'SecOps Lead',
+            createdAt: inc.created_at || new Date().toISOString(),
+            tactics: inc.tactics || 'Network Defense',
+            recommendedAction: inc.recommended_action || 'Inspect firewall rules and isolate host',
+            riskScore: inc.risk_score || 80,
+            confidence: inc.confidence || 90
+          }));
+          this.state.activeIncident = this.state.incidents[0];
+        } else {
+          this.state.incidents = [];
+          this.state.activeIncident = null;
+        }
+      }
+
+      // 4. Fetch real assets from Supabase
+      const assetRes = await fetch(`${api}/assets?limit=20`).catch(() => null);
+      if (assetRes && assetRes.ok) {
+        const assets = await assetRes.json();
+        if (Array.isArray(assets) && assets.length > 0) {
+          this.state.assets = assets.map((ast: any) => ({
+            id: ast.id,
+            hostname: ast.hostname || `HOST-${ast.ip_address}`,
+            ipAddress: ast.ip_address || '0.0.0.0',
+            assetType: ast.asset_type || 'Server',
+            os: ast.os || 'Linux',
+            status: ast.status || 'HEALTHY',
+            riskScore: ast.risk_score || 20,
+            cpu: ast.cpu_percent || 15,
+            network: ast.network_speed || '1 Gbps',
+            vulnerabilitiesCount: ast.vulnerabilities_count || 0,
+            lastActivity: ast.last_activity ? new Date(ast.last_activity).toLocaleTimeString() : 'Active'
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn('[THREATWAVE LIVE] Could not fetch initial data from backend:', err);
+    }
+    this.notify();
   }
 
   public getState(): DemoState {
@@ -192,21 +430,167 @@ class DemoEngine {
     this.listeners.forEach(listener => listener());
   }
 
+  public toggleLiveLabMode(enabled?: boolean): boolean {
+    this.state.liveLabMode = enabled !== undefined ? enabled : !this.state.liveLabMode;
+    if (this.state.liveLabMode) {
+      this.state.demoMode = false;
+      this.stopAutoTicker();
+      this.state.radarBlips = [];
+      this.state.attackArcs = [];
+      this.state.attackChainNodes = [];
+      this.state.notifications = [
+        {
+          id: 'live-idle',
+          title: 'SYSTEM IDLE',
+          message: 'No live threats detected — Sensor Active',
+          severity: 'LOW',
+          timestamp: 'Active',
+          read: true,
+          type: 'SENSOR_IDLE'
+        }
+      ];
+      this.fetchInitialLiveData();
+      realtimeClient.connect();
+    } else {
+      realtimeClient.disconnect();
+      this.state = this.getMockDemoState();
+      this.startAutoTicker();
+    }
+    this.notify();
+    return this.state.liveLabMode;
+  }
+
   public toggleDemoMode(enabled?: boolean): boolean {
     this.state.demoMode = enabled !== undefined ? enabled : !this.state.demoMode;
     if (this.state.demoMode) {
+      this.state.liveLabMode = false;
+      realtimeClient.disconnect();
+      this.state = this.getMockDemoState();
       this.startAutoTicker();
     } else {
       this.stopAutoTicker();
+      this.state = this.getCleanLiveState();
+      realtimeClient.connect();
+      this.fetchInitialLiveData();
     }
     this.notify();
     return this.state.demoMode;
   }
 
+  public ingestLiveAlert(alert: RealtimeAlert): void {
+    const timeStr = new Date(alert.timestamp || Date.now()).toTimeString().substring(0, 8);
+
+    const newEv: SecurityEvent = {
+      id: alert.id || `live-ev-${Date.now()}`,
+      timestamp: timeStr,
+      sourceIp: alert.source_ip,
+      destinationIp: alert.destination_ip,
+      port: alert.destination_port || 80,
+      protocol: (alert.protocol || 'TCP') as any,
+      attackType: alert.attack_type,
+      severity: alert.severity,
+      confidence: alert.confidence > 1.0 ? alert.confidence / 100 : alert.confidence,
+      description: alert.description || (alert.evidence && alert.evidence[0]) || `${alert.threat_category} detected`,
+      category: (alert.threat_category || 'NETWORK') as any
+    };
+
+    // Prepend live event
+    this.state.events = [newEv, ...this.state.events.slice(0, 49)];
+
+    // Update global metrics
+    this.state.metrics.totalThreats += 1;
+    this.state.metrics.aiDetections += 1;
+    if (alert.severity === 'CRITICAL') {
+      this.state.metrics.criticalThreats += 1;
+      this.state.metrics.securityScore = Math.max(15, this.state.metrics.securityScore - 5);
+    } else {
+      this.state.metrics.securityScore = Math.max(20, this.state.metrics.securityScore - 2);
+    }
+
+    // Update Threat Graph node
+    const newNode: AttackChainNode = {
+      id: `node-${Date.now()}`,
+      name: alert.attack_type.toUpperCase(),
+      stage: alert.threat_category,
+      status: 'ACTIVE',
+      eventCount: 1,
+      details: alert.evidence.length > 0 ? alert.evidence.join(' | ') : `${alert.source_ip} -> ${alert.destination_ip}`
+    };
+    this.state.attackChainNodes = [newNode, ...this.state.attackChainNodes.slice(0, 8)];
+
+    // Update Radar blip
+    const blipAngle = Math.floor(Math.random() * 360);
+    this.state.radarBlips = [
+      {
+        id: `blip-${Date.now()}`,
+        name: alert.attack_type,
+        angle: blipAngle,
+        radius: 0.35 + Math.random() * 0.45,
+        severity: alert.severity,
+        ip: alert.source_ip,
+        pulsing: true
+      },
+      ...this.state.radarBlips.slice(0, 7)
+    ];
+
+    // Notification
+    const notif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: `LIVE DETECTION: ${alert.attack_type}`,
+      message: `${alert.threat_category} detected from ${alert.source_ip} targeting ${alert.destination_ip}. Confidence: ${alert.confidence}%.`,
+      severity: alert.severity,
+      timestamp: 'Just now',
+      read: false,
+      type: alert.severity === 'CRITICAL' ? 'CRITICAL_THREAT' : 'AI_ANOMALY'
+    };
+    this.state.notifications = [notif, ...this.state.notifications.slice(0, 19)];
+
+    // CyberGuard AI Context
+    this.state.aiInsight = {
+      text: `[CYBERGUARD OBSERVATION] Real detection: ${alert.attack_type} (${alert.threat_category}) originating from ${alert.source_ip} targeting ${alert.destination_ip}. Evidence: ${alert.evidence.join('. ')}. Recommended defense: Isolate host and verify firewall filtering rules.`,
+      confidence: alert.confidence,
+      status: 'ACTIVE',
+      lastAnalysis: 'Just now'
+    };
+
+    // Escalate to Incident
+    if (alert.severity === 'CRITICAL') {
+      const incCode = `INC-${Date.now().toString().slice(-4)}`;
+      const newInc: Incident = {
+        id: `inc-${Date.now()}`,
+        code: incCode,
+        title: `Live Incident: ${alert.attack_type}`,
+        description: `Correlated attack sequence detected against ${alert.destination_ip}. ${alert.evidence.join('. ')}`,
+        severity: 'CRITICAL',
+        status: 'OPEN',
+        sourceIp: alert.source_ip,
+        targetAsset: alert.destination_ip,
+        assignedTo: 'SecOps AI Copilot',
+        createdAt: new Date().toISOString(),
+        tactics: alert.threat_category,
+        recommendedAction: `ISOLATE_HOST ${alert.destination_ip} AND BLOCK_IP ${alert.source_ip}`,
+        riskScore: alert.risk_score,
+        confidence: alert.confidence
+      };
+      this.state.incidents = [newInc, ...this.state.incidents.slice(0, 9)];
+      this.state.activeIncident = newInc;
+      this.state.metrics.activeIncidents += 1;
+    }
+
+    this.notify();
+  }
+
   private startAutoTicker(): void {
+    if (!this.state.demoMode || this.state.liveLabMode) {
+      this.stopAutoTicker();
+      return;
+    }
     if (this.tickerInterval) clearInterval(this.tickerInterval);
     this.tickerInterval = window.setInterval(() => {
-      if (!this.state.demoMode || this.state.activeSimulation.isSimulating) return;
+      if (!this.state.demoMode || this.state.liveLabMode || this.state.activeSimulation.isSimulating) {
+        this.stopAutoTicker();
+        return;
+      }
       this.generateSyntheticTickEvent();
     }, 4000);
   }
@@ -218,18 +602,28 @@ class DemoEngine {
     }
   }
 
-  // Generate continuous background synthetic threat event
+  private sequenceIndex = 0;
+
+  // Generate continuous background synthetic threat event matching requested safe sequence (DEMO MODE ONLY)
   private generateSyntheticTickEvent(): void {
-    const templates = [
-      { attackType: 'SQL Injection', src: '185.220.101.5', dst: '10.0.1.50', port: 80, proto: 'TCP', sev: 'CRITICAL', conf: 0.96, desc: "Tainted parameter `' OR 1=1--` intercepted by WAF filter", cat: 'WEB' },
-      { attackType: 'SSH Brute Force', src: '45.154.255.88', dst: '10.0.1.15', port: 22, proto: 'TCP', sev: 'HIGH', conf: 0.94, desc: 'Repeated root authentication failures over SSH', cat: 'AUTHENTICATION' },
-      { attackType: 'Port Scan', src: '103.251.167.20', dst: '10.0.1.20', port: 445, proto: 'TCP', sev: 'MEDIUM', conf: 0.86, desc: 'SYN sweep across destination range', cat: 'NETWORK' },
-      { attackType: 'DDoS SYN Flood', src: '194.26.29.112', dst: '10.0.2.1', port: 443, proto: 'TCP', sev: 'HIGH', conf: 0.91, desc: 'Excessive half-open connection requests', cat: 'NETWORK' },
-      { attackType: 'Phishing Domain Probe', src: '91.240.118.172', dst: '10.0.3.12', port: 25, proto: 'SMTP', cat: 'PHISHING', sev: 'HIGH', conf: 0.89, desc: 'Inbound message with spoofed authentication header' },
-      { attackType: 'C2 Beacon Pulse', src: '185.196.8.44', dst: '10.0.4.88', port: 8443, proto: 'HTTPS', cat: 'MALWARE', sev: 'CRITICAL', conf: 0.98, desc: 'Periodic beacon payload matching Cobalt Strike signature' }
+    if (!this.state.demoMode || this.state.liveLabMode) {
+      this.stopAutoTicker();
+      return;
+    }
+    const sequence = [
+      { attackType: 'Normal Traffic Baseline', src: '192.168.1.100', dst: '10.0.1.20', port: 443, proto: 'TCP', sev: 'LOW', conf: 0.99, desc: 'Nominal HTTP/2 TLS session activity within baseline parameters', cat: 'NETWORK' },
+      { attackType: 'Port Scan', src: '192.168.10.50', dst: '10.0.0.15', port: 445, proto: 'TCP', sev: 'HIGH', conf: 0.94, desc: 'Stealth SYN sweep across destination ports 21-8080 (1,024 probes)', cat: 'NETWORK' },
+      { attackType: 'SQL Injection', src: '10.0.0.15', dst: '10.0.1.50', port: 80, proto: 'TCP', sev: 'CRITICAL', conf: 0.97, desc: "Tainted parameter `' OR 1=1--` intercepted in HTTP search query", cat: 'WEB' },
+      { attackType: 'Suspicious Login', src: '10.0.1.20', dst: '10.0.1.15', port: 389, proto: 'TCP', sev: 'HIGH', conf: 0.89, desc: 'Admin session forged without MFA from anomalous user-agent', cat: 'AUTHENTICATION' },
+      { attackType: 'Privilege Escalation', src: '10.0.1.20', dst: '10.0.1.50', port: 5432, proto: 'TCP', sev: 'CRITICAL', conf: 0.95, desc: 'Unauthorized role elevation command `ALTER ROLE postgres WITH SUPERUSER`', cat: 'AUTHENTICATION' },
+      { attackType: 'Database Access', src: '10.0.1.20', dst: '10.0.1.50', port: 5432, proto: 'TCP', sev: 'CRITICAL', conf: 0.98, desc: 'Sequential dump of 14,000 sensitive records from public.users', cat: 'WEB' },
+      { attackType: 'Data Transfer Anomaly', src: '10.0.1.50', dst: '194.26.29.112', port: 443, proto: 'TCP', sev: 'CRITICAL', conf: 0.96, desc: 'Anomalous bulk TLS egress stream (+1,400% above 30-day baseline)', cat: 'NETWORK' },
+      { attackType: 'Incident Created (THR-1042)', src: '185.220.101.5', dst: '10.0.1.50', port: 443, proto: 'TCP', sev: 'CRITICAL', conf: 0.98, desc: 'Autonomous ThreatWave correlation synthesizes 7-stage kill chain ticket', cat: 'MALWARE' }
     ];
 
-    const pick = templates[Math.floor(Math.random() * templates.length)];
+    const pick = sequence[this.sequenceIndex % sequence.length];
+    this.sequenceIndex++;
+
     const timeStr = new Date().toTimeString().substring(0, 8);
 
     const newEv: SecurityEvent = {
@@ -258,9 +652,13 @@ class DemoEngine {
   }
 
   // ========================================================================
-  // UNIFIED 6 CORE THREATS & FULL ATTACK STORY SIMULATION PIPELINE
+  // UNIFIED 6 CORE THREATS & FULL ATTACK STORY SIMULATION PIPELINE (DEMO ONLY)
   // ========================================================================
   public async simulateAttack(threatType: string): Promise<void> {
+    if (this.state.liveLabMode || !this.state.demoMode) {
+      console.log('[THREATWAVE LIVE] In Live Mode: client-side synthetic threat simulation is blocked. Real alerts must arrive via real sensor telemetry.');
+      return;
+    }
     const isFullStory = threatType === 'FULL_ATTACK_STORY';
 
     const pipelineSteps: PipelineStep[] = isFullStory ? [

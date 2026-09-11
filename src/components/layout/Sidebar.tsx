@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Shield, Brain, Activity, Crosshair, Globe, GitFork, GitCommit, Fingerprint,
   Bug, FileCode2, Mail, Server, Award, Zap, Skull, BarChart3, FileText, Bell,
-  Settings, ChevronLeft, ChevronRight
+  Settings, ChevronLeft, ChevronRight, TrendingUp, Network, HardDrive, Cpu, HeartPulse
 } from 'lucide-react';
 import { ActivePage } from '../../types';
 
@@ -44,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'DETECTION',
       items: [
         { id: 'live-detection', label: 'Live Threat Detection', icon: Activity, color: 'text-rose-400' },
+        { id: 'anomaly-center', label: 'Anomaly Center', icon: TrendingUp, color: 'text-amber-400' },
         { id: 'threat-hunting', label: 'Threat Hunting', icon: Crosshair, color: 'text-amber-400' }
       ]
     },
@@ -53,7 +54,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'threat-intelligence', label: 'Threat Intelligence', icon: Globe, color: 'text-blue-400' },
         { id: 'threat-graph', label: 'Threat Graph', icon: GitFork, color: 'text-cyan-400' },
         { id: 'attack-timeline', label: 'Attack Timeline', icon: GitCommit, color: 'text-amber-400' },
-        { id: 'ioc-investigation', label: 'IOC Investigation', icon: Fingerprint, color: 'text-rose-400' }
+        { id: 'ioc-investigation', label: 'IOC Investigation', icon: Fingerprint, color: 'text-rose-400' },
+        { id: 'evidence-explorer', label: 'Evidence Explorer', icon: HardDrive, color: 'text-cyan-400' }
       ]
     },
     {
@@ -67,6 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'INFRASTRUCTURE',
       items: [
+        { id: 'network-map', label: 'Live Network Map', icon: Network, color: 'text-emerald-400' },
         { id: 'assets', label: 'Asset Monitor', icon: Server, color: 'text-sky-400' },
         { id: 'security-posture', label: 'Risk & Security Posture', icon: Award, color: 'text-emerald-400' }
       ]
@@ -89,6 +92,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'SYSTEM',
       items: [
+        { id: 'system-flow', label: 'System Flow Pipeline', icon: Cpu, color: 'text-purple-400' },
+        { id: 'system-health', label: 'System Health & Engine', icon: HeartPulse, color: 'text-teal-400' },
         { id: 'settings', label: 'Settings', icon: Settings, color: 'text-slate-400' }
       ]
     }

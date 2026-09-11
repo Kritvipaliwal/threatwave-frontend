@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { 
   Brain, Send, Sparkles, Copy, Check, ShieldAlert, Terminal, CornerDownLeft, 
-  RotateCcw, AlertTriangle, ShieldCheck
+  RotateCcw, AlertTriangle, ShieldCheck, ArrowRight, GitCommit, Zap
 } from 'lucide-react';
 import { useDemoEngine } from '../demo/useDemoEngine';
+import { ActionApprovalModal } from '../components/security/ActionApprovalModal';
+import { aiService } from '../services/aiService';
 
 interface ChatMessage {
   id: string;
@@ -12,35 +14,52 @@ interface ChatMessage {
   timestamp: string;
   severity?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   confidence?: number;
-  affectedAsset?: string;
-  recommendedAction?: string;
+  riskScore?: number;
+  attackPattern?: string;
   evidence?: string[];
+  recommendation?: string;
+  affectedAsset?: string;
 }
 
 export const AiAssistant: React.FC = () => {
-  const { state } = useDemoEngine();
+  const { state, executeResponseAction } = useDemoEngine();
   const [input, setInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processingStage, setProcessingStage] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [approvalAction, setApprovalAction] = useState<{
+    title: string;
+    target: string;
+    priority: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+    reason: string;
+    actionType: string;
+  } | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'm-1',
       sender: 'ai',
-      text: `Hello Operator. ThreatWave AI SOC Analyst is online. Currently correlating telemetry across ${state.assets.length} production assets and ${state.events.length} active intrusion events. How can I assist your investigation?`,
-      timestamp: '20:50 UTC',
-      confidence: 0.99
+      text: 'ThreatWave AI Investigator initialized. Correlated 7 intrusion events across 4 network segments. I am actively monitoring live packet metadata and anomalous baseline drifts.',
+      timestamp: '09:42 UTC',
+      confidence: 96,
+      riskScore: 91,
+      attackPattern: 'Reconnaissance → Exploitation → Account Compromise → Database Access → Data Transfer',
+      evidence: [
+        '5 correlated security events within 6 minutes',
+        '2 abnormal behavior signals on database egress channel',
+        '1 critical asset affected (Prod-DB-01 / 10.0.1.50)'
+      ],
+      recommendation: 'Contain the affected asset after analyst approval.'
     }
   ]);
 
   const suggestedPrompts = [
-    'Investigate latest critical threat',
-    'Why did the risk score drop?',
-    'Show attack chain progression',
-    'Find highest-risk asset in infrastructure',
-    'Summarize today\'s active incidents',
-    'Generate executive containment playbook'
+    'Why is this incident critical?',
+    'Show the attack chain.',
+    'What evidence supports this threat?',
+    'What changed from the baseline?',
+    'What should I investigate next?',
+    'Summarize this incident.'
   ];
 
   const handleSend = async (textToSend?: string) => {
@@ -60,56 +79,106 @@ export const AiAssistant: React.FC = () => {
 
     // Multi-stage simulated AI reasoning steps
     const stages = [
-      'SCANNING REAL-TIME TELEMETRY...',
-      'CORRELATING IOCS & MITRE TACTICS...',
-      'EVALUATING ASSET VULNERABILITY CONTEXT...',
-      'GENERATING ACTIONABLE FORENSIC REPORT...'
+      'QUERYING STREAMING FEATURE STORE...',
+      'EVALUATING ISOLATION FOREST ANOMALY SCORES...',
+      'CORRELATING TOPOLOGY GRAPH & MITRE TACTICS...',
+      'SYNTHESIZING FORENSIC INVESTIGATION REPORT...'
     ];
+
+    // Concurrently trigger stages and query backend AI Copilot
+    const apiPromise = aiService.chatCopilot(query, 'THR-1042').catch(() => null);
 
     for (const stage of stages) {
       setProcessingStage(stage);
-      await new Promise(r => setTimeout(r, 450));
+      await new Promise(r => setTimeout(r, 300));
     }
+
+    const apiResult = await apiPromise;
 
     // Dynamic AI response based on query
     let responseText = '';
-    let sev: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' = 'CRITICAL';
-    let conf = 0.96;
-    let asset = 'Prod-DB-01 (10.0.1.50)';
-    let action = 'BLOCK_IP 185.220.101.5 AND ISOLATE_ASSET Prod-DB-01';
-    let evidence = [
-      "Inbound HTTP GET with stacked SQL commands: ' OR 1=1--",
-      "Tor exit node IP 185.220.101.5 flagged on AbuseIPDB with 98% malicious confidence",
-      "Associated CVE-2023-38606 on target database engine"
-    ];
+    let attackPattern: string | undefined = undefined;
+    let riskScore: number = 91;
+    let confidence: number = 96;
+    let evidence: string[] = [];
+    let recommendation: string = 'Contain the affected asset after analyst approval.';
 
     const qLower = query.toLowerCase();
-    if (qLower.includes('risk') || qLower.includes('score')) {
-      responseText = `The Security Posture Score is currently ${state.metrics.securityScore}/100. It dropped by 6 points following ${state.metrics.criticalThreats} critical threats, including unauthenticated SQL injection probes on Prod-DB-01. Containing active incidents will restore score to 96%.`;
-      sev = 'HIGH';
-      conf = 0.94;
-      action = 'ENFORCE AUTOMATED FIREWALL DROPS';
-      evidence = [`Critical threats: ${state.metrics.criticalThreats}`, `Active Incidents: ${state.metrics.activeIncidents}`];
+
+    if (apiResult?.reply) {
+      responseText = apiResult.reply;
+      if (apiResult.suggestions && apiResult.suggestions.length > 0) {
+        // suggestions can enrich next steps
+      }
+    }
+
+    if (qLower.includes('critical') || qLower.includes('why')) {
+      if (!responseText) responseText = 'Incident THR-1042 is flagged as CRITICAL because adversary pivoted directly from perimeter DMZ web server to production PostgreSQL database, exfiltrating sensitive credential tables.';
+      riskScore = 93;
+      confidence = 97;
+      attackPattern = 'Port Scan → SQL Injection → Privilege Escalation → Database Access → Exfiltration';
+      evidence = [
+        'High-confidence SQL injection payload (`UNION SELECT...`) verified',
+        'Unauthorized 2.84 GB bulk outbound transfer to foreign C2 IP',
+        'Privilege escalation to superuser role on Prod-DB-01'
+      ];
+      recommendation = 'Execute firewall drop on adversary IP 185.220.101.5 and isolate Prod-DB-01.';
     } else if (qLower.includes('chain') || qLower.includes('attack')) {
-      responseText = `Adversary attack chain detected: Tor Exit Node (185.220.101.5) executed stealth TCP port sweeps, pivoted to DMZ-Nginx-01 via port 80, and delivered stacked SQL injection queries aimed at Prod-DB-01. Automated containment successfully intercepted data exfiltration.`;
-      sev = 'CRITICAL';
-      conf = 0.98;
-      action = 'VERIFY DB CREDENTIAL AUDIT & ROTATE SERVICE PASSWORDS';
-      evidence = ['MITRE T1595 Reconnaissance', 'MITRE T1190 Exploit Public-Facing App', 'MITRE T1059 SQL Execution'];
-    } else if (qLower.includes('asset') || qLower.includes('highest')) {
-      const highestRisk = state.assets.reduce((max, a) => a.riskScore > max.riskScore ? a : max, state.assets[0]);
-      responseText = `Highest-risk asset is ${highestRisk.hostname} (${highestRisk.ipAddress}) with Risk Score ${highestRisk.riskScore}/100. Status is ${highestRisk.status} due to ${highestRisk.vulnerabilitiesCount} known vulnerabilities and active external ingress.`;
-      sev = 'CRITICAL';
-      asset = `${highestRisk.hostname} (${highestRisk.ipAddress})`;
-      action = 'ISOLATE ASSET & APPLY EMERGENCY OS SECURITY PATCH';
-      evidence = [`OS: ${highestRisk.os}`, `Risk: ${highestRisk.riskScore}`, `Vulnerabilities: ${highestRisk.vulnerabilitiesCount}`];
-    } else if (qLower.includes('incident') || qLower.includes('summarize')) {
-      responseText = `There are currently ${state.metrics.activeIncidents} active incidents in the queue. Leading incident is INC-2048: Distributed SQL Injection targeting customer accounts database. Assigned to ThreatWave SOAR Copilot.`;
-      sev = 'HIGH';
-      action = 'COMPLETE INCIDENT TRIAGE & RESOLVE TICKETS';
-      evidence = state.incidents.map(i => `${i.id}: ${i.title} (${i.status})`);
+      if (!responseText) responseText = 'Adversary intrusion chain reconstructed across 7 temporal stages. Attack originated from Tor Exit node 185.220.101.5 and concluded with encrypted TLS data transfer.';
+      riskScore = 91;
+      confidence = 96;
+      attackPattern = 'Reconnaissance → Exploitation → Account Compromise → Database Access → Data Transfer';
+      evidence = [
+        '09:40 - Reconnaissance ping sweep across subnet',
+        '09:41 - Port scanning ports 21-8080 on DMZ-Nginx-01',
+        '09:42 - Stacked SQL injection query on search API',
+        '09:44 - Unauthorized role elevation',
+        '09:46 - Egress volume anomaly (+1,400% above baseline)'
+      ];
+      recommendation = 'Isolate compromised host 10.0.1.50 from internal subnet.';
+    } else if (qLower.includes('evidence')) {
+      if (!responseText) responseText = 'ThreatWave tri-engine fusion confirms malicious intent with 96% confidence based on 6 independent forensic indicators:';
+      riskScore = 91;
+      confidence = 96;
+      evidence = [
+        'Abnormal connection frequency (1,024 SYN probes in 1.8s)',
+        'Multiple destination ports sequential sweep (21, 22, 80, 443, 445)',
+        'Traffic deviation from baseline (+840% above subnet nominal)',
+        'Known CVE-2023-38606 exploit signature pattern match',
+        'ML Isolation Forest anomaly outlier score: 0.978',
+        'JA3 fingerprint matches Cobalt Strike malleable C2'
+      ];
+      recommendation = 'Verify DB audit logs and rotate service credentials.';
+    } else if (qLower.includes('baseline') || qLower.includes('changed')) {
+      if (!responseText) responseText = '30-day baseline comparison indicates severe anomalies on asset Prod-DB-01: outbound traffic volume spiked +1,400% (normally < 15 MB/hr, reached 2.84 GB). Auth failure rate surged +420% on LDAP directory.';
+      riskScore = 88;
+      confidence = 94;
+      evidence = [
+        'Egress volume: 2.84 GB vs baseline 14.2 MB',
+        'Auth failures: 48 attempts in 30s vs baseline 0.4/hr',
+        'New unseen destination IP: 194.26.29.112 (Foreign bulletproof ASN)'
+      ];
+      recommendation = 'Apply immediate outbound network egress restrictions.';
+    } else if (qLower.includes('next') || qLower.includes('investigate')) {
+      if (!responseText) responseText = 'Priority Next Steps: 1. Contain Prod-DB-01 to prevent lateral spread. 2. Null-route adversary 185.220.101.5 at edge gateway. 3. Audit PostgreSQL query logs for accessed tables. 4. Check workstation 10.0.4.88 for dormant C2 beacons.';
+      riskScore = 91;
+      confidence = 95;
+      evidence = [
+        'Adversary actively maintains established TCP session',
+        'Potential dormant persistence in Auth-LDAP-01 accounts'
+      ];
+      recommendation = 'Authorize automated SOAR containment playbook.';
     } else {
-      responseText = `ThreatWave AI correlation complete: Analyzed query "${query}". Identified active adversary IP 185.220.101.5 targeting infrastructure. Recommend executing automated firewall drop and asset quarantine playbooks.`;
+      if (!responseText) responseText = 'Incident Summary THR-1042: Coordinated multi-vector intrusion against core enterprise database infrastructure. Detection engines flagged initial reconnaissance progressing to database compromise and bulk exfiltration. Containment ready for analyst approval.';
+      riskScore = 91;
+      confidence = 96;
+      attackPattern = 'Reconnaissance → Exploitation → Account Compromise → Database Access → Data Transfer';
+      evidence = [
+        '5 correlated events across DMZ, Auth, and DB layers',
+        '2 abnormal behavior signals on data egress channels',
+        '1 tier-0 production database affected'
+      ];
+      recommendation = 'Contain the affected asset after analyst approval.';
     }
 
     const aiMsg: ChatMessage = {
@@ -117,11 +186,12 @@ export const AiAssistant: React.FC = () => {
       sender: 'ai',
       text: responseText,
       timestamp: new Date().toTimeString().substring(0, 5) + ' UTC',
-      severity: sev,
-      confidence: conf,
-      affectedAsset: asset,
-      recommendedAction: action,
-      evidence
+      confidence,
+      riskScore,
+      attackPattern,
+      evidence,
+      recommendation,
+      affectedAsset: 'Prod-DB-01 (10.0.1.50)'
     };
 
     setMessages(prev => [...prev, aiMsg]);
@@ -129,143 +199,171 @@ export const AiAssistant: React.FC = () => {
     setProcessingStage('');
   };
 
-  const copyToClipboard = (id: string, text: string) => {
+  const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-12">
-      {/* Header */}
-      <div className="p-6 rounded-2xl bg-[#0c1527] border border-[#1e3a66] flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 animate-fadeIn pb-16 font-mono text-xs">
+      {/* Header Banner */}
+      <div className="p-6 rounded-2xl bg-[#080d1a] border border-cyan-500/40 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 font-mono text-xs text-slate-400 mb-1">
-            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
-              AI SOC ANALYST
-            </span>
-            <span className="text-emerald-400 flex items-center gap-1 font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> ONLINE
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold flex items-center gap-1.5">
+              <Brain className="w-3.5 h-3.5 text-purple-400" />
+              THREATWAVE AI INVESTIGATOR
             </span>
             <span>•</span>
-            <span className="text-cyan-300">ANALYZING {state.events.length} EVENTS</span>
+            <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              ● ANALYZING SECURITY DATA
+            </span>
           </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            ThreatWave AI Cyber Assistant
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight font-sans">
+            AI Cyber Defense Copilot & Forensic Analyst
           </h1>
           <p className="text-slate-400 text-xs font-sans mt-0.5">
-            Generative cybersecurity copilot for automated incident triage, kill-chain correlation, and defense execution.
+            Autonomous multi-vector reasoning engine correlating packet telemetry, MITRE ATT&CK kill chains, and automated containment playbooks.
           </p>
         </div>
 
-        <button
-          onClick={() => setMessages([messages[0]])}
-          className="self-start md:self-auto px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white flex items-center gap-1.5 text-xs font-mono"
-        >
-          <RotateCcw className="w-3.5 h-3.5" /> Reset Chat
-        </button>
+        {/* Real-time reasoning badge */}
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-right shrink-0">
+          <div className="text-cyan-300 font-extrabold text-sm">NEURAL MODEL v4.8</div>
+          <div className="text-[10px] text-slate-400">Context Window: 64k Telemetry Events</div>
+        </div>
       </div>
 
-      {/* Suggested Prompts Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {suggestedPrompts.map((prompt, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleSend(prompt)}
-            className="p-2.5 rounded-xl bg-[#0c1527] border border-[#1e3a66]/60 hover:border-cyan-400/50 hover:bg-cyan-500/10 text-left text-xs font-mono text-slate-300 hover:text-cyan-300 transition-all flex items-start gap-2 group"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
-            <span className="line-clamp-2">{prompt}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Main Chat Box */}
-      <div className="rounded-2xl bg-[#0c1527] border border-[#1e3a66] flex flex-col h-[560px] overflow-hidden shadow-2xl">
+      {/* Main Chat Interface */}
+      <div className="rounded-2xl bg-[#091224] border border-[#1e3a66] shadow-2xl overflow-hidden flex flex-col h-[640px]">
         {/* Messages Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-xs">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {messages.map(msg => {
-            const isUser = msg.sender === 'user';
+            const isAi = msg.sender === 'ai';
+
             return (
               <div
                 key={msg.id}
-                className={`flex gap-3 max-w-3xl ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                className={`flex gap-3 max-w-4xl ${isAi ? 'mr-auto' : 'ml-auto flex-row-reverse'}`}
               >
                 {/* Avatar */}
-                <div className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-bold ${
-                  isUser
-                    ? 'bg-slate-800 text-slate-300 border border-slate-700'
-                    : 'bg-gradient-to-tr from-cyan-500 to-blue-600 text-black shadow-[0_0_12px_rgba(0,242,254,0.3)]'
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  isAi 
+                    ? 'bg-purple-600/30 border border-purple-400/50 text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.3)]' 
+                    : 'bg-cyan-500/20 border border-cyan-400/50 text-cyan-300'
                 }`}>
-                  {isUser ? 'OP' : <Brain className="w-4 h-4" />}
+                  {isAi ? <Brain className="w-4 h-4" /> : <Terminal className="w-4 h-4" />}
                 </div>
 
-                {/* Message Bubble */}
-                <div className={`p-4 rounded-2xl border space-y-2 relative group ${
-                  isUser
-                    ? 'bg-cyan-500/10 border-cyan-400/40 text-slate-100 rounded-tr-none'
-                    : 'bg-slate-900/90 border-[#1e3a66] text-slate-200 rounded-tl-none'
+                {/* Message Body */}
+                <div className={`space-y-3 p-4 rounded-2xl ${
+                  isAi 
+                    ? 'bg-[#060c18] border border-[#1e3a66] shadow-xl text-slate-200' 
+                    : 'bg-gradient-to-r from-cyan-900/60 to-blue-900/60 border border-cyan-500/40 text-white'
                 }`}>
-                  <div className="flex items-center justify-between gap-4 text-[10px] text-slate-400">
-                    <span className="font-bold text-white">
-                      {isUser ? 'Operator (You)' : 'ThreatWave AI Copilot'}
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-800/80 pb-2 text-[10px] text-slate-400">
+                    <span className="font-extrabold text-white">
+                      {isAi ? 'THREATWAVE AI ANALYST' : 'SOC OPERATOR'}
                     </span>
                     <div className="flex items-center gap-2">
                       <span>{msg.timestamp}</span>
                       <button
-                        onClick={() => copyToClipboard(msg.id, msg.text)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-white"
-                        title="Copy text"
+                        onClick={() => handleCopy(msg.id, msg.text)}
+                        className="text-slate-400 hover:text-white"
+                        title="Copy message"
                       >
                         {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                       </button>
                     </div>
                   </div>
 
-                  <p className="text-xs font-sans leading-relaxed text-slate-100">
+                  <p className="text-xs font-sans text-slate-200 leading-relaxed whitespace-pre-line">
                     {msg.text}
                   </p>
 
-                  {/* AI Structured Evidence Box */}
-                  {!isUser && msg.confidence && (
-                    <div className="mt-3 p-3 rounded-xl bg-black/40 border border-slate-800 font-mono text-[11px] space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                        {msg.severity && (
-                          <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
-                            {msg.severity} SEVERITY
-                          </span>
-                        )}
-                        <span className="text-cyan-400 font-bold">
-                          AI CONFIDENCE: {Math.round(msg.confidence * 100)}%
+                  {/* AI Structured Outputs if present */}
+                  {isAi && msg.attackPattern && (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-[#1e3a66]/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider flex items-center gap-1.5">
+                          <GitCommit className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>ATTACK PATTERN:</span>
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] font-bold border border-purple-500/30">
+                          [INFERRED]
                         </span>
                       </div>
+                      <div className="text-xs font-mono font-bold text-cyan-300">
+                        {msg.attackPattern}
+                      </div>
 
-                      {msg.affectedAsset && (
-                        <div>
-                          <span className="text-slate-500">TARGET ASSET: </span>
-                          <span className="text-amber-300 font-bold">{msg.affectedAsset}</span>
-                        </div>
-                      )}
-
-                      {msg.evidence && msg.evidence.length > 0 && (
-                        <div>
-                          <span className="text-slate-500 block mb-1">CORRELATED EVIDENCE:</span>
-                          <ul className="list-disc list-inside space-y-0.5 text-slate-300 text-[10px]">
-                            {msg.evidence.map((ev, i) => (
-                              <li key={i}>{ev}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {msg.recommendedAction && (
-                        <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-                          <span className="text-emerald-400 font-bold">
-                            <ShieldCheck className="w-3.5 h-3.5 inline mr-1" />
-                            {msg.recommendedAction}
+                      {/* Score & Confidence Badges */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-900">
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-500">Risk Score:</span>
+                          <span className="text-rose-400 font-extrabold flex items-center gap-1">
+                            <span>{msg.riskScore} / 100</span>
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">[PREDICTED]</span>
                           </span>
                         </div>
-                      )}
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-500">Confidence:</span>
+                          <span className="text-emerald-400 font-extrabold">{msg.confidence}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Evidence Bullets */}
+                  {isAi && msg.evidence && msg.evidence.length > 0 && (
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                          CORRELATED FORENSIC EVIDENCE:
+                        </div>
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/30">
+                          [OBSERVED]
+                        </span>
+                      </div>
+                      {msg.evidence.map((evItem, idx) => (
+                        <div key={idx} className="flex items-start gap-2 text-[11px] text-slate-300 font-sans">
+                          <Check className="w-3 h-3 text-cyan-400 shrink-0 mt-0.5" />
+                          <span>{evItem}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Playbook Recommendation */}
+                  {isAi && msg.recommendation && (
+                    <div className="p-3 rounded-xl bg-rose-950/20 border border-rose-500/30 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[10px] text-rose-400 font-mono block uppercase font-bold">
+                            PLAYBOOK RECOMMENDATION:
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-500/30">
+                            [RECOMMENDED]
+                          </span>
+                        </div>
+                        <span className="text-xs font-sans text-rose-200 font-bold">
+                          {msg.recommendation}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setApprovalAction({
+                          title: 'Contain Affected Host & Null-Route Adversary',
+                          target: 'Prod-DB-01 (10.0.1.50)',
+                          priority: 'CRITICAL',
+                          reason: 'Adversary SQL injection and bulk data exfiltration verified by ThreatWave AI.',
+                          actionType: 'CONTAIN_HOST'
+                        })}
+                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] shrink-0 transition-colors cursor-pointer"
+                      >
+                        [REVIEW ACTION]
+                      </button>
                     </div>
                   )}
                 </div>
@@ -273,47 +371,64 @@ export const AiAssistant: React.FC = () => {
             );
           })}
 
-          {/* AI Processing Status */}
+          {/* Processing Animation */}
           {isProcessing && (
-            <div className="flex gap-3 items-center p-3 rounded-xl bg-slate-900/60 border border-cyan-400/30 text-cyan-300 animate-pulse">
-              <Brain className="w-4 h-4 animate-spin text-cyan-400 shrink-0" />
-              <div className="font-mono text-xs font-bold tracking-wider">
-                {processingStage}
-              </div>
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-slate-950 border border-cyan-400/50 text-xs font-mono text-cyan-300 animate-pulse">
+              <Brain className="w-4 h-4 animate-spin" />
+              <span>{processingStage || 'ANALYZING SECURITY DATA...'}</span>
             </div>
           )}
         </div>
 
-        {/* Input Bar */}
-        <div className="p-3 border-t border-[#1e3a66] bg-slate-950/60">
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              handleSend();
-            }}
-            className="flex items-center gap-2"
-          >
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                placeholder="Ask ThreatWave AI about threats, risk score, incidents, CVEs, or mitigation playbooks..."
-                disabled={isProcessing}
-                className="w-full py-2.5 pl-3 pr-10 rounded-xl bg-slate-900 border border-[#1e3a66] text-white text-xs font-mono placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
-              />
-            </div>
+        {/* Suggested Prompts Ribbon */}
+        <div className="p-3 bg-slate-950/90 border-t border-[#1e3a66]/60 flex items-center gap-2 overflow-x-auto">
+          <span className="text-[10px] text-slate-500 uppercase font-bold shrink-0">SUGGESTED:</span>
+          {suggestedPrompts.map(prompt => (
             <button
-              type="submit"
-              disabled={isProcessing || !input.trim()}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-bold text-xs hover:shadow-[0_0_16px_rgba(0,242,254,0.4)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
+              key={prompt}
+              onClick={() => handleSend(prompt)}
+              className="px-2.5 py-1 rounded-lg bg-slate-900 border border-[#1e3a66] text-slate-300 hover:text-white hover:border-cyan-400 text-[10px] whitespace-nowrap transition-all cursor-pointer"
             >
-              <span>Query AI</span>
-              <Send className="w-3.5 h-3.5" />
+              "{prompt}"
             </button>
-          </form>
+          ))}
+        </div>
+
+        {/* Chat Input Bar */}
+        <div className="p-4 bg-slate-950 border-t border-[#1e3a66] flex items-center gap-3">
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            placeholder="Ask ThreatWave AI Investigator (e.g. Why is this incident critical? Show the attack chain)..."
+            className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-[#1e3a66] text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={isProcessing || !input.trim()}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-bold text-xs flex items-center gap-1.5 hover:shadow-[0_0_16px_rgba(0,242,254,0.4)] disabled:opacity-50 transition-all cursor-pointer"
+          >
+            <span>Ask AI</span>
+            <Send className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
+
+      {/* Analyst Action Approval Modal */}
+      {approvalAction && (
+        <ActionApprovalModal
+          action={approvalAction}
+          onApprove={() => {
+            executeResponseAction(approvalAction.actionType, approvalAction.target);
+            setApprovalAction(null);
+          }}
+          onReject={() => setApprovalAction(null)}
+          onClose={() => setApprovalAction(null)}
+        />
+      )}
     </div>
   );
 };
+
+export default AiAssistant;

@@ -2,22 +2,24 @@
 
 @layer base {
   :root {
-    --bg-base: #050811;
-    --bg-sidebar: #080d1a;
-    --bg-card: #0c1527;
-    --bg-card-elevated: #111e38;
+    --bg-base: #04070f;
+    --bg-sidebar: #060b18;
+    --bg-card: #091224;
+    --bg-card-elevated: #0f1c38;
     --border-subtle: rgba(30, 58, 102, 0.5);
-    --border-glow: rgba(0, 242, 254, 0.3);
+    --border-glow: rgba(0, 242, 254, 0.35);
     --neon-cyan: #00f2fe;
-    --neon-crimson: #f43f5e;
+    --neon-blue: #38bdf8;
+    --neon-violet: #818cf8;
+    --neon-magenta: #f43f5e;
     --neon-amber: #f59e0b;
     --neon-emerald: #10b981;
   }
 
   body {
-    background-color: #050811;
+    background-color: #04070f;
     color: #f8fafc;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     margin: 0;
     padding: 0;
     overflow-x: hidden;
@@ -25,11 +27,11 @@
 
   /* Custom thin scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #050811;
+    background: #04070f;
   }
   ::-webkit-scrollbar-thumb {
     background: #1e3a66;
@@ -40,10 +42,54 @@
   }
 }
 
-/* Pulse animation utility */
+/* Animations */
 @keyframes ping-slow {
   75%, 100% {
     transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.25), inset 0 0 10px rgba(0, 242, 254, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.45), inset 0 0 15px rgba(0, 242, 254, 0.2);
+  }
+}
+
+@keyframes pulse-glow-red {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.25), inset 0 0 10px rgba(244, 63, 94, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(244, 63, 94, 0.5), inset 0 0 15px rgba(244, 63, 94, 0.25);
+  }
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(1000%);
+  }
+}
+
+@keyframes flow-particle {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
     opacity: 0;
   }
 }
@@ -52,14 +98,40 @@
   animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow-red {
+  animation: pulse-glow-red 2s ease-in-out infinite;
+}
+
 /* Glassmorphism SOC surface */
 .soc-card {
-  background: #0c1527;
-  border: 1px solid rgba(30, 58, 102, 0.6);
-  border-radius: 0.75rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  background: rgba(9, 18, 36, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(30, 58, 102, 0.65);
+  border-radius: 0.875rem;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  transition: all 0.25s ease-in-out;
 }
 
 .soc-card:hover {
-  border-color: rgba(0, 242, 254, 0.4);
+  border-color: rgba(0, 242, 254, 0.45);
+  box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 242, 254, 0.15);
+}
+
+.soc-glow-border {
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.15);
+}
+
+.soc-glow-border-red {
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  box-shadow: 0 0 20px rgba(244, 63, 94, 0.2);
+}
+
+.soc-glow-border-amber {
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
 }

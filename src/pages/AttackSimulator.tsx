@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Skull, Play, ShieldAlert, CheckCircle2, Zap, Check, Sparkles, Activity } from 'lucide-react';
+import { Skull, Play, ShieldAlert, CheckCircle2, Zap, Check, Sparkles, Activity, Square, Radio, Server } from 'lucide-react';
 import { useDemoEngine } from '../demo/useDemoEngine';
+import { realtimeClient } from '../api/realtime';
 
 export const AttackSimulator: React.FC = () => {
   const { state, simulateAttack } = useDemoEngine();
   const [selectedThreat, setSelectedThreat] = useState<string>('FULL_ATTACK_STORY');
+  const [isLabGenerating, setIsLabGenerating] = useState<boolean>(false);
+  const [labStatusMsg, setLabStatusMsg] = useState<string | null>(null);
 
   const attackTypes = [
     { 
@@ -81,9 +84,67 @@ export const AttackSimulator: React.FC = () => {
     }
   ];
 
-  const handleStartSimulation = (threatId?: string) => {
+  const mapThreatToLabScenario = (threatId: string): string => {
+    switch (threatId) {
+      case 'DDOS': return 'ddos';
+      case 'BOTNET_C2': return 'beacon';
+      case 'DGA_DNS_TUNNEL': return 'dga';
+      case 'MALICIOUS_ENCRYPTED_SESSION': return 'encrypted';
+      case 'RECON_PORT_SCAN': return 'portscan';
+      case 'DATA_EXFILTRATION': return 'exfil';
+      case 'FULL_ATTACK_STORY': return 'full';
+      case 'SQL_INJECTION': return 'full';
+      case 'BRUTE_FORCE': return 'portscan';
+      default: return 'ddos';
+    }
+  };
+
+  const handleStartSimulation = async (threatId?: string) => {
+    const targetScenarioId = threatId || selectedThreat;
     if (state.activeSimulation.isSimulating) return;
-    simulateAttack(threatId || selectedThreat);
+
+    if (state.liveLabMode || !state.demoMode) {
+      const scenario = mapThreatToLabScenario(targetScenarioId);
+      setIsLabGenerating(true);
+      setLabStatusMsg(`Launching real lab traffic scenario '${scenario.toUpperCase()}'...`);
+
+      try {
+        const res = await fetch(`${realtimeClient.getApiBaseUrl()}/lab/generate/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scenario,
+            target_ip: '127.0.0.1',
+            duration: 10,
+            rate_pps: 100
+          })
+        });
+
+        if (res.ok) {
+          setLabStatusMsg(`🟢 REAL LAB TRAFFIC ACTIVE: Scenario '${scenario.toUpperCase()}' dispatched. Passive sniffer observing real packets. Detections will stream live from Supabase / WebSocket.`);
+        } else {
+          const err = await res.json().catch(() => ({ detail: 'Failed' }));
+          setLabStatusMsg(`⚠️ Backend generator response: ${err.detail || 'Could not start lab scenario'}`);
+        }
+      } catch (err: any) {
+        setLabStatusMsg(`⚠️ Backend generator unreachable (${err.message}). When running against remote target, use scripts/cloud_passive_sensor.py.`);
+      }
+      return; // STRICT ZERO-SYNTHETIC GUARANTEE: Never trigger mock attack pipeline in LIVE MODE
+    }
+
+    // Run the UI correlation pipeline strictly in DEMO MODE
+    simulateAttack(targetScenarioId);
+  };
+
+  const handleStopLabTraffic = async () => {
+    try {
+      await fetch(`${realtimeClient.getApiBaseUrl()}/lab/generate/stop`, { method: 'POST' });
+      setIsLabGenerating(false);
+      setLabStatusMsg('Lab traffic generator stopped.');
+      setTimeout(() => setLabStatusMsg(null), 3000);
+    } catch (e: any) {
+      setLabStatusMsg(`Could not stop lab: ${e.message}`);
+    }
   };
 
   const currentSimulation = state.activeSimulation;
@@ -98,28 +159,53 @@ export const AttackSimulator: React.FC = () => {
               <Skull className="w-3.5 h-3.5 text-cyan-400" /> ADVERSARY EMULATION & SIH DEMO ENGINE
             </span>
             <span>•</span>
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> 100% SAFE LOCAL SIMULATION
+            <span className={`font-bold flex items-center gap-1 ${state.liveLabMode ? 'text-emerald-400' : 'text-amber-400'}`}>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${state.liveLabMode ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {state.liveLabMode ? 'LIVE LAB PASSIVE OBSERVATION' : '100% SAFE LOCAL SIMULATION'}
             </span>
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight font-mono">
             Attack Simulator & Unified Threat Pipeline
           </h1>
           <p className="text-slate-300 text-xs font-sans mt-1 leading-relaxed">
-            Trigger individual SIH core threat vectors or launch the coordinated 10-stage ThreatWave Attack Story. 
-            Events propagate seamlessly throughout telemetry feeds, radar blips, global attack arcs, AI correlation, and SOAR response actions.
+            {state.liveLabMode
+              ? 'LIVE LAB ACTIVE: Triggers real controlled packet streams against 127.0.0.1. The passive sniffer captures, extracts flow metrics, runs RF & heuristic models, and streams live detections over WebSocket/SSE.'
+              : 'DEMO MODE ACTIVE: Emulates multi-stage attack pipelines client-side across telemetry feeds, radar blips, global attack arcs, AI correlation, and SOAR response actions.'}
           </p>
+
+          {labStatusMsg && (
+            <div className="mt-3 p-2.5 rounded-lg bg-slate-900/90 border border-cyan-500/40 text-xs font-mono text-cyan-300 flex items-center gap-2">
+              <Server className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>{labStatusMsg}</span>
+            </div>
+          )}
         </div>
 
         {/* Master Live Demo Action */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {isLabGenerating && (
+            <button
+              onClick={handleStopLabTraffic}
+              className="px-4 py-3.5 rounded-xl bg-rose-700/80 hover:bg-rose-600 border border-rose-500 text-white font-extrabold text-xs font-mono flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Square className="w-3.5 h-3.5 fill-white" />
+              <span>STOP LAB TRAFFIC</span>
+            </button>
+          )}
+
           <button
             onClick={() => handleStartSimulation('FULL_ATTACK_STORY')}
             disabled={currentSimulation.isSimulating}
             className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-slate-950 font-extrabold text-xs font-mono flex items-center justify-center gap-2 hover:shadow-[0_0_25px_rgba(0,242,254,0.45)] transition-all disabled:opacity-50 cursor-pointer uppercase tracking-wider"
           >
             <Sparkles className="w-4 h-4 fill-slate-950" />
-            <span>{currentSimulation.isSimulating && currentSimulation.threatType === 'FULL_ATTACK_STORY' ? 'DEMO IN PROGRESS...' : 'START LIVE DEMO (FULL ATTACK STORY)'}</span>
+            <span>
+              {currentSimulation.isSimulating && currentSimulation.threatType === 'FULL_ATTACK_STORY'
+                ? 'DEMO IN PROGRESS...'
+                : state.liveLabMode
+                ? 'LAUNCH FULL LIVE LAB ATTACK (127.0.0.1)'
+                : 'START LIVE DEMO (FULL ATTACK STORY)'}
+            </span>
           </button>
         </div>
       </div>
@@ -176,14 +262,36 @@ export const AttackSimulator: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => handleStartSimulation()}
-          disabled={currentSimulation.isSimulating}
-          className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 text-white font-extrabold text-xs font-mono flex items-center justify-center gap-2 hover:shadow-[0_0_24px_rgba(244,63,94,0.5)] transition-all disabled:opacity-50 cursor-pointer uppercase tracking-wider"
-        >
-          <Play className="w-4 h-4 fill-white" />
-          <span>{currentSimulation.isSimulating ? 'SIMULATION RUNNING...' : 'START SIMULATION'}</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {isLabGenerating && (
+            <button
+              onClick={handleStopLabTraffic}
+              className="px-5 py-3.5 rounded-xl bg-rose-700/80 hover:bg-rose-600 border border-rose-500 text-white font-extrabold text-xs font-mono flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Square className="w-4 h-4 fill-white" />
+              <span>STOP LAB</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => handleStartSimulation()}
+            disabled={currentSimulation.isSimulating}
+            className={`px-8 py-3.5 rounded-xl text-white font-extrabold text-xs font-mono flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer uppercase tracking-wider ${
+              state.liveLabMode
+                ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]'
+                : 'bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:shadow-[0_0_24px_rgba(244,63,94,0.5)]'
+            }`}
+          >
+            <Play className="w-4 h-4 fill-white" />
+            <span>
+              {currentSimulation.isSimulating
+                ? 'EXECUTING...'
+                : state.liveLabMode
+                ? 'TRANSMIT LAB TRAFFIC (127.0.0.1)'
+                : 'START SIMULATION'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Live Pipeline Step Visualization */}

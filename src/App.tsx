@@ -26,13 +26,18 @@ import { Analytics } from './pages/Analytics';
 import { Reports } from './pages/Reports';
 import { Notifications } from './pages/Notifications';
 import { Settings } from './pages/Settings';
+import { LiveNetworkMap } from './pages/LiveNetworkMap';
+import { AnomalyCenter } from './pages/AnomalyCenter';
+import { EvidenceExplorer } from './pages/EvidenceExplorer';
+import { SystemFlow } from './pages/SystemFlow';
+import { SystemHealth } from './pages/SystemHealth';
 
 export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<ActivePage>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
 
-  const { state, toggleDemoMode, markNotificationAsRead } = useDemoEngine();
+  const { state, toggleDemoMode, toggleLiveLabMode, markNotificationAsRead } = useDemoEngine();
   const unreadAlertsCount = state.notifications.filter(n => !n.read).length;
 
   // Global keyboard shortcuts (Ctrl+K or Cmd+K for search)
@@ -59,6 +64,8 @@ export const App: React.FC = () => {
         return <AiAssistant />;
       case 'live-detection':
         return <LiveThreatDetection />;
+      case 'anomaly-center':
+        return <AnomalyCenter />;
       case 'threat-hunting':
         return <ThreatHunting />;
       case 'threat-intelligence':
@@ -67,14 +74,18 @@ export const App: React.FC = () => {
         return <ThreatGraph />;
       case 'attack-timeline':
         return <AttackTimeline />;
+      case 'ioc-investigation':
+        return <IocInvestigation />;
+      case 'evidence-explorer':
+        return <EvidenceExplorer />;
       case 'vulnerabilities':
         return <VulnerabilityAnalysis />;
       case 'malware':
         return <MalwareAnalysis />;
       case 'phishing':
         return <PhishingAnalyzer />;
-      case 'ioc-investigation':
-        return <IocInvestigation />;
+      case 'network-map':
+        return <LiveNetworkMap />;
       case 'assets':
         return <AssetMonitor />;
       case 'security-posture':
@@ -89,6 +100,10 @@ export const App: React.FC = () => {
         return <Reports />;
       case 'notifications':
         return <Notifications onNavigate={setActivePage} />;
+      case 'system-flow':
+        return <SystemFlow />;
+      case 'system-health':
+        return <SystemHealth />;
       case 'settings':
         return <Settings />;
       default:
@@ -114,7 +129,9 @@ export const App: React.FC = () => {
         unreadCount={unreadAlertsCount}
         onNavigate={setActivePage}
         demoMode={state.demoMode}
+        liveLabMode={state.liveLabMode}
         onToggleDemoMode={toggleDemoMode}
+        onToggleLiveLabMode={toggleLiveLabMode}
       />
 
       {/* Main Content Area */}

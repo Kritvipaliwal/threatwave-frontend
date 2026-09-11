@@ -6,6 +6,7 @@ export function useDemoEngine(): DemoState & {
   simulateAttack: (threatType: string) => Promise<void>;
   executeResponseAction: (action: string, target: string) => void;
   toggleDemoMode: (enabled?: boolean) => boolean;
+  toggleLiveLabMode: (enabled?: boolean) => boolean;
   markNotificationAsRead: (id: string) => void;
 } {
   const [state, setState] = useState<DemoState>(demoEngine.getState());
@@ -23,6 +24,7 @@ export function useDemoEngine(): DemoState & {
     simulateAttack: (threatType: string) => demoEngine.simulateAttack(threatType),
     executeResponseAction: (action: string, target: string) => demoEngine.executeResponseAction(action, target),
     toggleDemoMode: (enabled?: boolean) => demoEngine.toggleDemoMode(enabled),
+    toggleLiveLabMode: (enabled?: boolean) => demoEngine.toggleLiveLabMode(enabled),
     markNotificationAsRead: (id: string) => demoEngine.markNotificationAsRead(id)
   };
 }

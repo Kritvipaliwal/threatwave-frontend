@@ -5,9 +5,14 @@ import { SecurityEvent, Severity } from '../../types';
 interface EventStreamProps {
   events: SecurityEvent[];
   maxHeight?: string;
+  onSelectEvent?: (event: SecurityEvent) => void;
 }
 
-export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '420px' }) => {
+export const EventStream: React.FC<EventStreamProps> = ({ 
+  events, 
+  maxHeight = '420px',
+  onSelectEvent 
+}) => {
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
@@ -31,7 +36,7 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0c1527] rounded-xl border border-[#1e3a66]/60 overflow-hidden">
+    <div className="flex flex-col h-full bg-[#0c1527] rounded-xl border border-[#1e3a66]/60 overflow-hidden shadow-xl">
       {/* Stream Header & Filters */}
       <div className="p-3 border-b border-[#1e3a66]/60 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-mono font-bold text-white">
@@ -47,7 +52,7 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
             <button
               key={sev}
               onClick={() => setSeverityFilter(sev)}
-              className={`px-2 py-0.5 rounded border transition-colors ${
+              className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
                 severityFilter === sev
                   ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 font-bold'
                   : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
@@ -66,7 +71,7 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
           <button
             key={cat}
             onClick={() => setCategoryFilter(cat)}
-            className={`px-1.5 py-0.5 rounded transition-colors ${
+            className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
               categoryFilter === cat
                 ? 'bg-slate-800 text-cyan-300 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
@@ -93,7 +98,9 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
             {filtered.map(ev => (
               <tr
                 key={ev.id}
-                className={`hover:bg-slate-800/30 transition-colors ${
+                data-event-id={ev.id}
+                onClick={() => onSelectEvent && onSelectEvent(ev)}
+                className={`hover:bg-slate-800/50 cursor-pointer transition-all duration-300 animate-fadeIn ${
                   ev.severity === 'CRITICAL' ? 'bg-rose-500/5' : ''
                 }`}
               >
@@ -106,7 +113,18 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
                   </span>
                 </td>
                 <td className="py-2.5 px-3 font-semibold text-white whitespace-nowrap">
-                  {ev.attackType}
+                  <div className="flex items-center gap-1.5">
+                    <span>{ev.attackType}</span>
+                    {ev.category === 'HISTORICAL' || ev.description?.startsWith('[HISTORICAL]') ? (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
+                        HISTORICAL
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-rose-500/20 text-rose-300 border border-rose-500/50 animate-pulse">
+                        LIVE
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="py-2.5 px-3 whitespace-nowrap text-slate-300">
                   <span className="text-cyan-400">{ev.sourceIp}</span>
@@ -122,8 +140,12 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-8 text-center text-slate-500">
-                  No security events match the current filter.
+                <td colSpan={5} className="py-8 text-center text-slate-400 font-mono">
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-emerald-300 font-bold">No live threats detected — Sensor Active</span>
+                    <span className="text-slate-500 text-[10px]">Passively observing network frames on monitored TAP</span>
+                  </div>
                 </td>
               </tr>
             )}
@@ -133,3 +155,5 @@ export const EventStream: React.FC<EventStreamProps> = ({ events, maxHeight = '4
     </div>
   );
 };
+
+export default EventStream;
